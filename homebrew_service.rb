@@ -5,17 +5,74 @@ ICON = {
   'stopped' => 'stopped.png'
 }
 
+class Service
+  attr_accessor :plist, :name, :status, :full_name
+
+  def initialize(plist)
+    @plist = plist
+  end
+
+  def name
+    @name ||= @plist.scan(/(?<=opt\/)[^\/]+/).first
+  end
+
+  def full_name
+    @full_name ||= @plist.scan(/homebrew.+(?=\.plist$)/).first
+  end
+
+  def status
+    return @status if @status
+    status_code = Service.launchctl_output.find { |_, code, name| name == full_name}
+    @status = (status_code && status_code[1] == '0' ? 'started' : 'stopped')
+  end
+
+  def load
+    system "launchctl load #{plist}"
+  end
+
+  def unload
+    system "launchctl unload #{plist}"
+  end
+
+  class << self
+    def all
+      find_launchd_plist_files.map { |plist| new(plist) }
+    end
+
+    def find_by_name(name)
+      all.find { |e| e.name == name }
+    end
+
+    def load_by_name(name)
+      find_by_name(name).load
+    end
+
+    def unload_by_name(name)
+      find_by_name(name).unload
+    end
+
+    def find_launchd_plist_files
+      Dir.glob('/usr/local/opt/*/homebrew*.plist')
+    end
+
+    def launchctl_output
+      @launchctl_output ||= `launchctl list`.lines.map { |e| e.chomp.split("\t") }
+    end
+  end
+end
+
 def list(query=nil)
-  cmd_out = `/usr/local/bin/brew services list`
-  services = cmd_out.lines[1..-1].map { |l| l.chomp.scan(/\S+/)[0,2] }.select { |name, status| query.nil? || name.include?(query) }
+  services = Service.all
+    .select { |svc| query.nil? || svc.name.include?(query) }
+    .sort_by { |svc| [svc.status, svc.name] }
   item_list = ItemList.new
-  item_list.items = services.map { |name, status|
+  item_list.items = services.map { |svc|
     item = Item.new
-    item.title = name
-    item.subtitle = "Status: #{status}"
-    item.icon[:text] = ICON[status]
+    item.title = svc.name
+    item.subtitle = "Status: #{svc.status.capitalize}"
+    item.icon[:text] = ICON[svc.status]
     item.attributes = {
-      arg: "#{name}:#{status}"
+      arg: "#{svc.name}:#{svc.status}"
     }
     item
   }
@@ -23,21 +80,13 @@ def list(query=nil)
 end
 
 
-def start(service_name)
-  system "/usr/local/bin/brew services start #{service_name}"
-end
-
-def stop(service_name)
-  system "/usr/local/bin/brew services stop #{service_name}"
-end
-
 if ARGV[0] == 'list'
   print list(ARGV[1])
 elsif ARGV[0]
   service_name, status = ARGV[0].split(':')
   if status == 'started'
-    stop(service_name)
+    Service.unload_by_name(service_name)
   elsif status == 'stopped'
-    start(service_name)
+    Service.load_by_name(service_name)
   end
 end
