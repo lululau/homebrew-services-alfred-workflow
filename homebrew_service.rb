@@ -13,7 +13,7 @@ class Service
   end
 
   def name
-    @name ||= @plist.scan(/(?<=opt\/)[^\/]+/).first
+    @name ||= @plist.scan(/(?<=homebrew\.mxcl\.).+(?=\.plist)/).first
   end
 
   def full_name
@@ -51,8 +51,19 @@ class Service
       find_by_name(name).unload
     end
 
+    def homebrew_prefix
+      unless @homebrew_prefix
+        if File.exists?("/opt/homebrew")
+          @homebrew_prefix = "/opt/homebrew"
+        else
+          @homebrew_prefix = "/usr/local"
+        end
+      end
+      @homebrew_prefix
+    end
+
     def find_launchd_plist_files
-      Dir.glob('/usr/local/opt/*/homebrew*.plist')
+      Dir.glob("#{homebrew_prefix}/opt/*/homebrew*.plist")
     end
 
     def launchctl_output
