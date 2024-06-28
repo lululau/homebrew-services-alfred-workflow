@@ -13,11 +13,11 @@ class Service
   end
 
   def name
-    @name ||= @plist.scan(/(?<=homebrew\.mxcl\.).+(?=\.plist)/).first
+    @name ||= @plist.gsub(/.*homebrew\.mxcl\./, '').gsub(/\.plist/, '')
   end
 
   def full_name
-    @full_name ||= @plist.scan(/homebrew.+(?=\.plist$)/).first
+    @full_name ||= File.basename(@plist, '.plist')
   end
 
   def status
@@ -34,6 +34,14 @@ class Service
     system "launchctl unload #{plist}"
   end
 
+  def copy_to_launch_agent_dir
+    system "cp -f #{plist} ~/Library/LaunchAgents/"
+  end
+
+  def remove_from_launch_agent_dir
+    system "rm -f ~/Library/LaunchAgents/#{File.basename(plist)}"
+  end
+
   class << self
     def all
       find_launchd_plist_files.map { |plist| new(plist) }
@@ -43,12 +51,16 @@ class Service
       all.find { |e| e.name == name }
     end
 
-    def load_by_name(name)
-      find_by_name(name).load
+    def load_by_name(name, auto = false)
+      svc = find_by_name(name)
+      svc.load
+      svc.copy_to_launch_agent_dir if auto
     end
 
-    def unload_by_name(name)
-      find_by_name(name).unload
+    def unload_by_name(name, auto = false)
+      svc = find_by_name(name)
+      svc.remove_from_launch_agent_dir if auto
+      svc.unload
     end
 
     def homebrew_prefix
@@ -93,11 +105,11 @@ end
 
 if ARGV[0] == 'list'
   print list(ARGV[1])
-elsif ARGV[0]
-  service_name, status = ARGV[0].split(':')
+elsif ARGV.size >= 2
+  service_name, status = ARGV[1].split(':')
   if status == 'started'
-    Service.unload_by_name(service_name)
+    Service.unload_by_name(service_name, ARGV[0] == 'auto')
   elsif status == 'stopped'
-    Service.load_by_name(service_name)
+    Service.load_by_name(service_name, ARGV[0] == 'auto')
   end
 end
