@@ -44,7 +44,10 @@ class Service
 
   class << self
     def all
-      find_launchd_plist_files.map { |plist| new(plist) }
+      find_launchd_plist_files
+        .group_by { |plist| File.basename(plist, '.plist') }
+        .values
+        .map { |plists| new(plists.last) }
     end
 
     def find_by_name(name)
