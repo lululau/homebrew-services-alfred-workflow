@@ -271,8 +271,6 @@ end
 
 class FrontMost
 
-  include URI::Escape
-
   attr :filename
 
   APPLE_SCRIPT = <<-EOF
@@ -294,7 +292,8 @@ class FrontMost
     IO.popen "osascript", "w+" do |io|
       io.write APPLE_SCRIPT
       io.close_write
-      raw_out = decode(io.gets.chomp)
+      # URI::Escape was removed in Ruby 3.4+/4.0; use decode_uri_component instead
+      raw_out = URI.decode_uri_component(io.gets.chomp)
       raw_out.sub!(%r#file://[^/]*/#, '/')
       raw_out.sub!(%r#^/Volumes/Users#, '/Users')
       if test ?e, raw_out
