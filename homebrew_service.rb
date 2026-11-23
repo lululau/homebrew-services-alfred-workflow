@@ -6,9 +6,10 @@ ICON = {
 }
 
 HOMEBREW_PREFIXES = ["/opt/homebrew", "/usr/local"].select { |p| File.exist?(p) }
+SERVICE_PREFIX_RE = /\A(?:homebrew(?:\.mxcl)?|sh\.brew)\./
 
 def homebrew_plist_files
-  HOMEBREW_PREFIXES.flat_map { |prefix| Dir.glob("#{prefix}/opt/*/homebrew*.plist") }
+  HOMEBREW_PREFIXES.flat_map { |prefix| Dir.glob("#{prefix}/opt/*/{homebrew.*,sh.brew.*}.plist") }
 end
 
 def running_services
@@ -18,23 +19,30 @@ def running_services
     .map { |cols| cols[2] }
 end
 
+def service_title(label)
+  label.sub(SERVICE_PREFIX_RE, '')
+end
+
 def list(query = nil)
   # Group by basename to deduplicate, take last (handles multiple prefixes)
   services = homebrew_plist_files
     .group_by { |f| File.basename(f, '.plist') }
     .values
-    .map { |files| File.basename(files.last, '.plist') }
-    .select { |name| query.nil? || name.include?(query) }
-    .sort_by { |name| [running_services.include?(name) ? 0 : 1, name] }
+    .map { |files|
+      label = File.basename(files.last, '.plist')
+      [label, service_title(label)]
+    }
+    .select { |_, title| query.nil? || query.empty? || title.downcase.include?(query.downcase) }
+    .sort_by { |label, title| [running_services.include?(label) ? 0 : 1, title] }
 
   item_list = ItemList.new
-  item_list.items = services.map { |name|
-    status = running_services.include?(name) ? 'started' : 'stopped'
+  item_list.items = services.map { |label, title|
+    status = running_services.include?(label) ? 'started' : 'stopped'
     item = Item.new
-    item.title = name.sub('homebrew.mxcl.', '')
+    item.title = title
     item.subtitle = "Status: #{status.capitalize}"
     item.icon[:text] = ICON[status]
-    item.attributes = { arg: "#{item.title}:#{status}" }
+    item.attributes = { arg: "#{title}:#{status}" }
     item
   }
   item_list.to_xml
